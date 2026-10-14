@@ -349,7 +349,7 @@
                 const searchRes = await callSpotify(`/search?q=${encodeURIComponent('This Is ' + artist.name)}&type=playlist&limit=1`);
                 let trackUris = [];
                 
-                // Safe check for valid playlist item
+                // Bulletproof check for valid playlist and non-null item
                 if (searchRes && searchRes.playlists && searchRes.playlists.items && searchRes.playlists.items.length > 0) {
                     const pl = searchRes.playlists.items[0];
                     if (pl && pl.name && pl.name.toLowerCase().includes(`this is ${artist.name.toLowerCase()}`)) {
