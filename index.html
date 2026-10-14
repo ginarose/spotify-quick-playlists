@@ -345,34 +345,51 @@
             for (let artist of selectedArtists) {
                 logDiv.innerHTML += `<div>> Processing ${artist.name}...</div>`;
                 
-                // Search for "This Is [Artist]"
-                const searchRes = await callSpotify(`/search?q=${encodeURIComponent('This Is ' + artist.name)}&type=playlist&limit=1`);
                 let trackUris = [];
                 
-                // Bulletproof check for valid playlist and non-null item
-                if (searchRes && searchRes.playlists && searchRes.playlists.items && searchRes.playlists.items.length > 0) {
-                    const pl = searchRes.playlists.items[0];
-                    if (pl && pl.name && pl.name.toLowerCase().includes(`this is ${artist.name.toLowerCase()}`)) {
-                        const tracksData = await callSpotify(`/playlists/${pl.id}/tracks?limit=100`);
-                        if (tracksData && tracksData.items) {
-                            trackUris = tracksData.items.filter(i => i && i.track && i.track.uri).map(i => i.track.uri);
+                try {
+                    // Search for "This Is [Artist]"
+                    const searchRes = await callSpotify(`/search?q=${encodeURIComponent('This Is ' + artist.name)}&type=playlist&limit=1`);
+                    
+                    // Safe lookup structure
+                    const items = searchRes && searchRes.playlists && searchRes.playlists.items;
+                    if (Array.isArray(items) && items.length > 0) {
+                        const pl = items[0];
+                        // Strict validation that pl exists and has a matching name
+                        if (pl && typeof pl.name === 'string' && pl.name.toLowerCase().includes(`this is ${artist.name.toLowerCase()}`)) {
+                            const tracksData = await callSpotify(`/playlists/${pl.id}/tracks?limit=100`);
+                            if (tracksData && Array.isArray(tracksData.items)) {
+                                trackUris = tracksData.items
+                                    .filter(i => i && i.track && typeof i.track.uri === 'string')
+                                    .map(i => i.track.uri);
+                            }
                         }
                     }
+                } catch (err) {
+                    console.warn(`Could not fetch "This Is" playlist for ${artist.name}, using fallback.`, err);
                 }
                 
-                // Fallback: Top 20 tracks
+                // Fallback: If no tracks found via "This Is" playlist, use top 20 tracks
                 if (trackUris.length === 0) {
                     logDiv.innerHTML += `<div>> "This Is" playlist not found for ${artist.name}, using top 20 fallback...</div>`;
-                    const topTracks = await callSpotify(`/artists/${artist.id}/top-tracks?market=US`);
-                    if (topTracks && topTracks.tracks) {
-                        trackUris = topTracks.tracks.slice(0, 20).map(t => t.uri);
+                    try {
+                        const topTracks = await callSpotify(`/artists/${artist.id}/top-tracks?market=US`);
+                        if (topTracks && Array.isArray(topTracks.tracks)) {
+                            trackUris = topTracks.tracks.slice(0, 20).map(t => t.uri);
+                        }
+                    } catch (err) {
+                        console.warn(`Could not fetch top tracks for ${artist.name}`, err);
                     }
                 }
                 
-                allTrackUris = allTrackUris.concat(trackUris);
+                if (trackUris.length > 0) {
+                    allTrackUris = allTrackUris.concat(trackUris);
+                } else {
+                    logDiv.innerHTML += `<div>> Warning: No tracks found for ${artist.name}.</div>`;
+                }
             }
 
-            // 2. Add tracks to the new private playlist
+            // 2. Add tracks to the new private playlist in batches of 100
             if (allTrackUris.length > 0) {
                 logDiv.innerHTML += `<div>> Adding ${allTrackUris.length} tracks...</div>`;
                 for (let i = 0; i < allTrackUris.length; i += 100) {
@@ -386,7 +403,7 @@
                 alert(`Playlist "${finalPlaylistName}" created successfully! Check your Spotify library and drag it into your "Quick Playlists" folder.`);
                 location.reload();
             } else {
-                logDiv.innerHTML += `<div>> Error: No tracks could be found for the selected artists.</div>`;
+                logDiv.innerHTML += `<div>> Error: No tracks could be added to the playlist.</div>`;
             }
         }
 </script>
