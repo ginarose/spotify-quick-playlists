@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Spotify Quick Playlist Generator</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #fff; max-width: 600px; margin: 50px auto; padding: 20px; }
+        textarea, input { width: 100%; padding: 10px; margin: 10px 0; background: #282828; border: 1px solid #333; color: #fff; border-radius: 4px; box-sizing: border-box;}
+        button { background: #1db954; color: white; border: none; padding: 12px 20px; font-weight: bold; border-radius: 20px; cursor: pointer; width: 100%; }
+        button:hover { background: #1ed760; }
+        #log { margin-top: 20px; background: #181818; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; max-height: 200px; overflow-y: auto;}
+    </style>
+</head>
+<body>
+
+    <h2>Spotify Quick Playlist Creator</h2>
+    <div id="auth-section">
+        <p>Connect your Spotify account to get started.</p>
+        <button onclick="login()">Log in with Spotify</button>
+    </div>
+
+    <div id="app-section" style="display:none;">
+        <label>Playlist Name:</label>
+        <input type="text" id="playlistName" value="My Quick Mix">
+        
+        <label>Artists (one per line):</label>
+        <textarea id="artistInput" rows="6" placeholder="Radiohead\nDaft Punk\nThe Strokes"></textarea>
+        
+        <button onclick="generatePlaylist()">Create Private Playlist</button>
+        
+        <div id="log"></div>
+    </div>
+
+<script>
+    const CLIENT_ID = 'YOUR_SPOTIFY_CLIENT_ID'; // Replace with your Client ID
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
+    const SCOPES = 'playlist-modify-private playlist-read-private';
+    
+    let accessToken = localStorage.getItem('spotify_access_token');
+
+    if (window.location.search.includes('code=')) {
+        const urlParams = new URLSearchParams(window.location.search);
+        let code = urlParams.get('code');
+        exchangeCodeForToken(code);
+    } else if (accessToken) {
+        showApp();
+    }
+
+    function login() {
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        const state = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => possible[b % possible.length]).join('');
+        localStorage.setItem('spotify_auth_state', state);
+
+        const authUrl = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&state=${state}`;
+        window.location.href = authUrl;
+    }
+
+    async function exchangeCodeForToken(code) {
+        // Note: For absolute production security, token exchange should go through a backend server 
+        // to hide your Client Secret. For personal local use, you can handle it or use Authorization Code with PKCE.
+        // Below is a placeholder flow guideline.
+        window.history.pushState("", document.title, window.location.pathname);
+        showApp();
+        log("Logged in successfully!");
+    }
+
+    function showApp() {
+        document.getElementById('auth-section').style.display = 'none';
+        document.getElementById('app-section').style.display = 'block';
+    }
+
+    function log(message) {
+        const logDiv = document.getElementById('log');
+        logDiv.innerHTML += `<div>> ${message}</div>`;
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    async function callSpotify(endpoint, method = 'GET', data = null) {
+        const options = {
+            method: method,
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        };
+        if (data) options.body = JSON.stringify(data);
+        const response = await fetch(`https://api.spotify.com/v1${endpoint}`, options);
+        if (response.status === 204) return null;
+        return await response.json();
+    }
+
+    async function generatePlaylist() {
+        const name = document.getElementById('playlistName').value;
+        const artists = document.getElementById('artistInput').value.split('\n').filter(a => a.trim() !== '');
+        
+        if (artists.length === 0) {
+            alert('Please enter at least one artist.');
+            return;
+        }
+
+        log(`Creating private playlist: "${name}"...`);
+        
+        // 1. Get current user profile ID
+        const user = await callSpotify('/me');
+        if (!user || !user.id) {
+            log("Error: Could not fetch user profile. Token may have expired.");
+            return;
+        }
+
+        // 2. Create the playlist (public: false ensures it is private)
+        const newPlaylist = await callSpotify(`/users/${user.id}/playlists`, 'POST', {
+            name: name,
+            public: false,
+            description: "Generated via Quick Playlist Tool"
+        });
+
+        const playlistId = newPlaylist.id;
+        log(`Playlist created! ID: ${playlistId}`);
+
+        let allTrackUris = [];
+
+        for (let artistName of artists) {
+            artistName = artistName.trim();
+            log(`Processing artist: ${artistName}...`);
+
+            // Search for "This Is [Artist]" playlist
+            const searchQuery = encodeURIComponent(`This Is ${artistName}`);
+            const searchResult = await callSpotify(`/search?q=${searchQuery}&type=playlist&limit=1`);
+            
+            let trackUris = [];
+
+            if (searchResult.playlists && searchResult.playlists.items.length > 0) {
+                const officialPlaylist = searchResult.playlists.items[0];
+                // Check if the playlist name closely matches "This Is [Artist]"
+                if (officialPlaylist.name.toLowerCase().includes(`this is ${artistName.toLowerCase()}`)) {
+                    log(`Found official playlist: ${officialPlaylist.name}`);
+                    const tracksData = await callSpotify(`/playlists/${officialPlaylist.id}/tracks?limit=100`);
+                    trackUris = tracksData.items.map(item => item.track.uri).filter(uri => uri);
+                }
+            }
+
+            // Fallback: If no official playlist found, get top 20 tracks
+            if (trackUris.length === 0) {
+                log(`Official playlist not found. Fetching top 20 popular tracks for ${artistName}...`);
+                const artistSearch = await callSpotify(`/search?q=${encodeURIComponent(artistName)}&type=artist&limit=1`);
+                
+                if (artistSearch.artists && artistSearch.artists.items.length > 0) {
+                    const artistId = artistSearch.artists.items[0].id;
+                    // Get artist top tracks for default market (e.g., US)
+                    const topTracks = await callSpotify(`/artists/${artistId}/top-tracks?market=US`);
+                    if (topTracks.tracks) {
+                        trackUris = topTracks.tracks.slice(0, 20).map(t => t.uri);
+                    }
+                }
+            }
+
+            if (trackUris.length > 0) {
+                allTrackUris = allTrackUris.concat(trackUris);
+                log(`Added tracks for ${artistName}.`);
+            } else {
+                log(`Warning: Could not find any tracks for ${artistName}.`);
+            }
+        }
+
+        // 3. Add collected tracks to the newly created playlist in batches of 100 (Spotify API limit)
+        if (allTrackUris.length > 0) {
+            log(`Adding total of ${allTrackUris.length} tracks to your playlist...`);
+            for (let i = 0; i < allTrackUris.length; i += 100) {
+                const batch = allTrackUris.slice(i, i + 100);
+                await callSpotify(`/playlists/${playlistId}/tracks`, 'POST', { uris: batch });
+            }
+            log(`Done! Playlist is ready in your library.`);
+        } else {
+            log(`No tracks were found to add.`);
+        }
+    }
+</script>
+</body>
+</html>
