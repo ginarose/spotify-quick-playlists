@@ -321,73 +321,74 @@
     }
 
     async function generatePlaylist() {
-        const logDiv = document.getElementById('log');
-        logDiv.style.display = 'block';
-        
-        const customNameInput = document.getElementById('customPlaylistName').value.trim();
-        const finalPlaylistName = customNameInput !== '' ? customNameInput : computedDefaultName;
-
-        logDiv.innerHTML = `<div>> Creating private playlist "${finalPlaylistName}"...</div>`;
-
-        const user = await callSpotify('/me');
-        if (!user) return;
-
-        // 1. Create playlist as private (public: false)
-        const token = localStorage.getItem('spotify_access_token');
-        const createRes = await fetch(`https://api.spotify.com/v1/users/${user.id}/playlists`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: finalPlaylistName, public: false, description: "Generated via Quick Playlist Tool" })
-        });
-        const newPlaylist = await createRes.json();
-
-        let allTrackUris = [];
-        for (let artist of selectedArtists) {
-            logDiv.innerHTML += `<div>> Processing ${artist.name}...</div>`;
+            const logDiv = document.getElementById('log');
+            logDiv.style.display = 'block';
             
-            // Search for "This Is [Artist]"
-            const searchRes = await callSpotify(`/search?q=${encodeURIComponent('This Is ' + artist.name)}&type=playlist&limit=1`);
-            let trackUris = [];
-            
-            if (searchRes && searchRes.playlists && searchRes.playlists.items.length > 0) {
-                const pl = searchRes.playlists.items[0];
-                if (pl.name.toLowerCase().includes(`this is ${artist.name.toLowerCase()}`)) {
-                    const tracksData = await callSpotify(`/playlists/${pl.id}/tracks?limit=100`);
-                    if (tracksData && tracksData.items) {
-                        trackUris = tracksData.items.map(i => i.track.uri).filter(u => u);
+            const customNameInput = document.getElementById('customPlaylistName').value.trim();
+            const finalPlaylistName = customNameInput !== '' ? customNameInput : computedDefaultName;
+
+            logDiv.innerHTML = `<div>> Creating private playlist "${finalPlaylistName}"...</div>`;
+
+            const user = await callSpotify('/me');
+            if (!user) return;
+
+            // 1. Create playlist as private (public: false)
+            const token = localStorage.getItem('spotify_access_token');
+            const createRes = await fetch(`https://api.spotify.com/v1/users/${user.id}/playlists`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: finalPlaylistName, public: false, description: "Generated via Quick Playlist Tool" })
+            });
+            const newPlaylist = await createRes.json();
+
+            let allTrackUris = [];
+            for (let artist of selectedArtists) {
+                logDiv.innerHTML += `<div>> Processing ${artist.name}...</div>`;
+                
+                // Search for "This Is [Artist]"
+                const searchRes = await callSpotify(`/search?q=${encodeURIComponent('This Is ' + artist.name)}&type=playlist&limit=1`);
+                let trackUris = [];
+                
+                // Safe check for valid playlist item
+                if (searchRes && searchRes.playlists && searchRes.playlists.items && searchRes.playlists.items.length > 0) {
+                    const pl = searchRes.playlists.items[0];
+                    if (pl && pl.name && pl.name.toLowerCase().includes(`this is ${artist.name.toLowerCase()}`)) {
+                        const tracksData = await callSpotify(`/playlists/${pl.id}/tracks?limit=100`);
+                        if (tracksData && tracksData.items) {
+                            trackUris = tracksData.items.filter(i => i && i.track && i.track.uri).map(i => i.track.uri);
+                        }
                     }
                 }
-            }
-            
-            // Fallback: Top 20 tracks
-            if (trackUris.length === 0) {
-                logDiv.innerHTML += `<div>> "This Is" playlist not found for ${artist.name}, using top 20 fallback...</div>`;
-                const topTracks = await callSpotify(`/artists/${artist.id}/top-tracks?market=US`);
-                if (topTracks && topTracks.tracks) {
-                    trackUris = topTracks.tracks.slice(0, 20).map(t => t.uri);
+                
+                // Fallback: Top 20 tracks
+                if (trackUris.length === 0) {
+                    logDiv.innerHTML += `<div>> "This Is" playlist not found for ${artist.name}, using top 20 fallback...</div>`;
+                    const topTracks = await callSpotify(`/artists/${artist.id}/top-tracks?market=US`);
+                    if (topTracks && topTracks.tracks) {
+                        trackUris = topTracks.tracks.slice(0, 20).map(t => t.uri);
+                    }
                 }
+                
+                allTrackUris = allTrackUris.concat(trackUris);
             }
-            
-            allTrackUris = allTrackUris.concat(trackUris);
-        }
 
-        // 2. Add tracks to the new private playlist
-        if (allTrackUris.length > 0) {
-            logDiv.innerHTML += `<div>> Adding ${allTrackUris.length} tracks...</div>`;
-            for (let i = 0; i < allTrackUris.length; i += 100) {
-                await fetch(`https://api.spotify.com/v1/playlists/${newPlaylist.id}/tracks`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uris: allTrackUris.slice(i, i + 100) })
-                });
+            // 2. Add tracks to the new private playlist
+            if (allTrackUris.length > 0) {
+                logDiv.innerHTML += `<div>> Adding ${allTrackUris.length} tracks...</div>`;
+                for (let i = 0; i < allTrackUris.length; i += 100) {
+                    await fetch(`https://api.spotify.com/v1/playlists/${newPlaylist.id}/tracks`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ uris: allTrackUris.slice(i, i + 100) })
+                    });
+                }
+                logDiv.innerHTML += `<div>> Done! Playlist created successfully.</div>`;
+                alert(`Playlist "${finalPlaylistName}" created successfully! Check your Spotify library and drag it into your "Quick Playlists" folder.`);
+                location.reload();
+            } else {
+                logDiv.innerHTML += `<div>> Error: No tracks could be found for the selected artists.</div>`;
             }
-            logDiv.innerHTML += `<div>> Done! Playlist created successfully.</div>`;
-            alert(`Playlist "${finalPlaylistName}" created successfully! Check your Spotify library and drag it into your "Quick Playlists" folder.`);
-            location.reload();
-        } else {
-            logDiv.innerHTML += `<div>> Error: No tracks could be found for the selected artists.</div>`;
         }
-    }
 </script>
 </body>
 </html>
