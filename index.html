@@ -38,7 +38,24 @@
         .chip { display: inline-flex; align-items: center; background: rgba(0,0,0,0.25); border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 15px; font-weight: 700; }
         .chip button { background: none; border: none; color: #a7f3d0; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 7px; margin-left: 2px; border-radius: 50%; }
         .chip button:hover { background: rgba(255,255,255,0.15); }
+        .seg { display: flex; gap: 8px; margin-bottom: 25px; }
+        .seg button { flex: 1; background: #535353; border: none; color: #fff; padding: 12px; font-size: 16px; border-radius: 4px; cursor: pointer; }
+        .seg button:hover { background: #636363; }
+        .seg button.active { background: #1db954; font-weight: 700; }
         .helper-text { font-size: 13px; color: #888; font-style: italic; margin-top: 10px; }
+
+        /* Result card */
+        .result-card { display: flex; background: #282828; border-radius: 4px; overflow: hidden; margin-top: 20px; }
+        .result-cover { width: 140px; min-height: 140px; flex-shrink: 0; background: #333 center / cover no-repeat; display: flex; align-items: center; justify-content: center; }
+        .result-body { padding: 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+        .result-status { color: #b3b3b3; font-size: 14px; }
+        .result-title { font-size: 20px; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+        .result-meta { color: #888; font-size: 13px; }
+        .result-actions { display: flex; align-items: center; gap: 16px; margin-top: 6px; }
+        .listen-btn { background: #1db954; color: #fff; text-decoration: none; font-weight: 700; padding: 10px 16px; border-radius: 4px; }
+        .listen-btn:hover { background: #1ed760; }
+        .another-btn { background: none; border: none; color: #b3b3b3; font-size: 14px; cursor: pointer; padding: 0; }
+        .another-btn:hover { color: #fff; }
 
         #log { margin-top: 20px; background: #181818; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; max-height: 150px; overflow-y: auto; }
     </style>
@@ -85,6 +102,13 @@
                 <div class="chip-list" id="selectedChips"></div>
             </div>
 
+            <h3>Songs per artist:</h3>
+            <div class="seg" id="trackCountSeg">
+                <button type="button" onclick="setTracksPerArtist(10)">10</button>
+                <button type="button" class="active" onclick="setTracksPerArtist(20)">20</button>
+                <button type="button" onclick="setTracksPerArtist(50)">50</button>
+            </div>
+
             <h3>Change the name? (Optional)</h3>
             <div class="search-container">
                 <input type="text" id="customPlaylistName" placeholder="" oninput="updatePlaylistNamePreview(this.value)">
@@ -95,11 +119,12 @@
                 <div class="action-bar-btn">→</div>
             </div>
             <div class="helper-text" id="helperTextPreview">
-                Playlist will be saved as "..." in the "Quick Playlists" folder.
+                Playlist will be saved as "[PLAYLIST NAME]" for you to organize into your "Quick Playlists" folder.
             </div>
         </div>
 
         <div id="log" style="display:none;"></div>
+        <div id="result"></div>
     </div>
 
 <script>
@@ -110,6 +135,7 @@
     let selectedArtists = []; 
     let recentArtists = [];
     let computedDefaultName = '';
+    let tracksPerArtist = 20;
 
     // Handle PKCE OAuth Redirect Response
     const urlParams = new URLSearchParams(window.location.search);
@@ -202,11 +228,16 @@
         loadRecentArtists();
     }
 
-    async function callSpotify(endpoint) {
+    async function callSpotify(endpoint, attempt = 0) {
         let token = localStorage.getItem('spotify_access_token');
         const response = await fetch(`https://api.spotify.com/v1${endpoint}`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
+        if (response.status === 429 && attempt < 3) {
+            const wait = (parseInt(response.headers.get('Retry-After')) || 2) * 1000;
+            await new Promise(r => setTimeout(r, wait));
+            return callSpotify(endpoint, attempt + 1);
+        }
         if (response.status === 401) {
             localStorage.removeItem('spotify_access_token');
             login();
@@ -375,7 +406,14 @@
 
     function updatePlaylistNamePreview(typedValue) {
         const activeName = (typedValue && typedValue.trim() !== '') ? typedValue.trim() : computedDefaultName;
-        document.getElementById('helperTextPreview').innerText = `Playlist will be saved as "${activeName}" in the "Quick Playlists" folder.`;
+        document.getElementById('helperTextPreview').innerText = `Playlist will be saved as "${activeName}" for you to organize into your "Quick Playlists" folder.`;
+    }
+
+    function setTracksPerArtist(n) {
+        tracksPerArtist = n;
+        document.querySelectorAll('#trackCountSeg button').forEach(b => {
+            b.classList.toggle('active', parseInt(b.textContent) === n);
+        });
     }
 
     function log(msg) {
@@ -388,44 +426,117 @@
 
     // Dev-mode Spotify apps can no longer read "This Is" playlists or artist top tracks,
     // so pull tracks via track search and keep only ones credited to the artist.
-    async function getArtistTracks(artist, perArtist = 20) {
+    async function getArtistTracks(artist, perArtist) {
         const found = new Map(); // keyed by lowercase title to skip single/album duplicates
-        for (let offset = 0; offset < 30 && found.size < perArtist; offset += 10) {
+        for (let offset = 0; offset < 100 && found.size < perArtist; offset += 10) {
             const q = encodeURIComponent(`artist:"${artist.name}"`);
             const res = await callSpotify(`/search?q=${q}&type=track&limit=10&offset=${offset}`);
             const items = res && res.tracks && res.tracks.items;
             if (!Array.isArray(items) || items.length === 0) break;
+            const lastPage = items.length < 10;
             items.forEach(t => {
                 if (t && t.uri && Array.isArray(t.artists) && t.artists.some(a => a.id === artist.id)) {
                     const key = t.name.toLowerCase();
-                    if (!found.has(key)) found.set(key, t.uri);
+                    if (!found.has(key)) found.set(key, { uri: t.uri, ms: t.duration_ms || 0 });
                 }
             });
+            if (lastPage) break;
         }
         return Array.from(found.values()).slice(0, perArtist);
     }
 
+    function formatDuration(ms) {
+        const mins = Math.round(ms / 60000);
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return h > 0 ? `${h}hr ${m}min` : `${m}min`;
+    }
+
+    function showResultCard({ name, songCount, totalMs, url, coverUrl }) {
+        const result = document.getElementById('result');
+        result.innerHTML = '';
+
+        const card = document.createElement('div');
+        card.className = 'result-card';
+
+        const cover = document.createElement('div');
+        cover.className = 'result-cover';
+        if (coverUrl) {
+            cover.style.backgroundImage = `url("${coverUrl}")`;
+        } else {
+            cover.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#777" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+        }
+
+        const body = document.createElement('div');
+        body.className = 'result-body';
+
+        const status = document.createElement('div');
+        status.className = 'result-status';
+        status.textContent = '✓ Playlist Created!';
+
+        const title = document.createElement('div');
+        title.className = 'result-title';
+        title.textContent = name;
+
+        const meta = document.createElement('div');
+        meta.className = 'result-meta';
+        meta.textContent = `${songCount} songs · ${formatDuration(totalMs)}`;
+
+        const actions = document.createElement('div');
+        actions.className = 'result-actions';
+
+        const listen = document.createElement('a');
+        listen.className = 'listen-btn';
+        listen.href = url;
+        listen.target = '_blank';
+        listen.rel = 'noopener';
+        listen.textContent = 'Listen →';
+
+        const another = document.createElement('button');
+        another.type = 'button';
+        another.className = 'another-btn';
+        another.textContent = 'Make another';
+        another.onclick = () => location.reload();
+
+        actions.appendChild(listen);
+        actions.appendChild(another);
+        body.append(status, title, meta, actions);
+        card.append(cover, body);
+        result.appendChild(card);
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    let isGenerating = false;
+
     async function generatePlaylist() {
+        if (isGenerating) return;
+        isGenerating = true;
+        const ok = await runGeneration();
+        if (!ok) isGenerating = false; // allow retry after a failure
+    }
+
+    async function runGeneration() {
         const logDiv = document.getElementById('log');
         logDiv.style.display = 'block';
         logDiv.innerHTML = '';
+        document.getElementById('result').innerHTML = '';
 
         const customNameInput = document.getElementById('customPlaylistName').value.trim();
         const finalPlaylistName = customNameInput !== '' ? customNameInput : computedDefaultName;
 
         // Gather tracks first so an empty playlist is never created
-        let allTrackUris = [];
+        const trackMap = new Map(); // uri -> duration (ms)
         for (const artist of selectedArtists) {
-            log(`Finding tracks for ${artist.name}...`);
-            const uris = await getArtistTracks(artist);
-            if (uris.length === 0) log(`Warning: no tracks found for ${artist.name}.`);
-            allTrackUris = allTrackUris.concat(uris);
+            log(`Finding up to ${tracksPerArtist} tracks for ${artist.name}...`);
+            const tracks = await getArtistTracks(artist, tracksPerArtist);
+            if (tracks.length === 0) log(`Warning: no tracks found for ${artist.name}.`);
+            tracks.forEach(t => trackMap.set(t.uri, t.ms));
         }
-        allTrackUris = Array.from(new Set(allTrackUris));
+        const allTrackUris = Array.from(trackMap.keys());
 
         if (allTrackUris.length === 0) {
             log('Error: no tracks found, playlist not created.');
-            return;
+            return false;
         }
 
         log(`Creating private playlist "${finalPlaylistName}"...`);
@@ -437,7 +548,7 @@
         });
         if (!createRes.ok) {
             log(`Error creating playlist (HTTP ${createRes.status}).`);
-            return;
+            return false;
         }
         const newPlaylist = await createRes.json();
 
@@ -450,13 +561,20 @@
             });
             if (!addRes.ok) {
                 log(`Error adding tracks (HTTP ${addRes.status}).`);
-                return;
+                return false;
             }
         }
 
-        log('Done! Playlist created successfully.');
-        alert(`Playlist "${finalPlaylistName}" created successfully! Check your Spotify library and drag it into your "Quick Playlists" folder.`);
-        location.reload();
+        log('Done!');
+        const totalMs = Array.from(trackMap.values()).reduce((sum, ms) => sum + ms, 0);
+        showResultCard({
+            name: finalPlaylistName,
+            songCount: allTrackUris.length,
+            totalMs,
+            url: (newPlaylist.external_urls && newPlaylist.external_urls.spotify) || `https://open.spotify.com/playlist/${newPlaylist.id}`,
+            coverUrl: null
+        });
+        return true;
     }
 </script>
 </body>
