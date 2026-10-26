@@ -31,7 +31,13 @@
         .including-box { background: #165b2d; padding: 12px 20px; font-size: 14px; color: #a7f3d0; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; margin-top: -4px; margin-bottom: 20px; }
 
         /* Naming Screen */
+        .back-btn { background: none; border: none; color: #b3b3b3; font-size: 16px; cursor: pointer; padding: 0; margin-bottom: 20px; }
+        .back-btn:hover { color: #fff; }
         .summary-box { background: #165b2d; border-radius: 4px; padding: 20px; font-size: 16px; color: #a7f3d0; margin-bottom: 25px; line-height: 1.4; }
+        .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .chip { display: inline-flex; align-items: center; background: rgba(0,0,0,0.25); border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 15px; font-weight: 700; }
+        .chip button { background: none; border: none; color: #a7f3d0; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 7px; margin-left: 2px; border-radius: 50%; }
+        .chip button:hover { background: rgba(255,255,255,0.15); }
         .helper-text { font-size: 13px; color: #888; font-style: italic; margin-top: 10px; }
 
         #log { margin-top: 20px; background: #181818; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; max-height: 150px; overflow-y: auto; }
@@ -72,8 +78,11 @@
 
         <!-- Step 2: Naming & Confirmation -->
         <div id="view-naming" style="display:none;">
-            <div class="summary-box" id="summaryBoxText">
-                This quick playlist includes:<br><strong></strong>
+            <button class="back-btn" onclick="goBackToSelect()">← Back</button>
+
+            <div class="summary-box">
+                This quick playlist includes:
+                <div class="chip-list" id="selectedChips"></div>
             </div>
 
             <h3>Change the name? (Optional)</h3>
@@ -303,16 +312,65 @@
         document.getElementById('view-select').style.display = 'none';
         document.getElementById('view-naming').style.display = 'block';
 
-        const names = selectedArtists.map(a => a.name).join(', ');
-        document.querySelector('#summaryBoxText strong').innerText = names;
+        document.getElementById('customPlaylistName').value = '';
+        renderNamingChips();
+        updateComputedName();
+    }
 
+    function goBackToSelect() {
+        document.getElementById('view-naming').style.display = 'none';
+        document.getElementById('view-select').style.display = 'block';
+
+        // Re-render so checkmarks reflect any removals made on the naming screen
+        const query = document.getElementById('searchInput').value;
+        if (query.trim() !== '') {
+            handleSearch(query);
+        } else {
+            renderArtistList(recentArtists);
+        }
+        updateFooter();
+    }
+
+    function renderNamingChips() {
+        const box = document.getElementById('selectedChips');
+        box.innerHTML = '';
+        selectedArtists.forEach(artist => {
+            const chip = document.createElement('span');
+            chip.className = 'chip';
+
+            const label = document.createElement('span');
+            label.textContent = artist.name;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.textContent = '×';
+            removeBtn.setAttribute('aria-label', `Remove ${artist.name}`);
+            removeBtn.onclick = () => removeArtistFromNaming(artist.id);
+
+            chip.appendChild(label);
+            chip.appendChild(removeBtn);
+            box.appendChild(chip);
+        });
+    }
+
+    function removeArtistFromNaming(id) {
+        selectedArtists = selectedArtists.filter(a => a.id !== id);
+        if (selectedArtists.length === 0) {
+            goBackToSelect();
+            return;
+        }
+        renderNamingChips();
+        updateComputedName();
+    }
+
+    function updateComputedName() {
         computedDefaultName = selectedArtists.length === 1 
             ? `${selectedArtists[0].name} Mix` 
             : `${selectedArtists.map(a => a.name).join(', ')} Mix`;
 
-        document.getElementById('customPlaylistName').value = '';
-        document.getElementById('customPlaylistName').placeholder = computedDefaultName;
-        updatePlaylistNamePreview('');
+        const input = document.getElementById('customPlaylistName');
+        input.placeholder = computedDefaultName;
+        updatePlaylistNamePreview(input.value);
     }
 
     function updatePlaylistNamePreview(typedValue) {
