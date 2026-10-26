@@ -1,10 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
     <title>Spotify Quick Playlist Generator</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #fff; max-width: 500px; margin: 40px auto; padding: 20px; box-sizing: border-box; }
+        body { font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #fff; max-width: 500px; margin: 40px auto; padding: 20px; box-sizing: border-box; }
         h1 { font-size: 28px; line-height: 1.2; margin-bottom: 30px; font-weight: 800; }
         h3 { font-size: 16px; margin: 20px 0 10px 0; color: #b3b3b3; font-weight: 500; }
         
@@ -54,7 +57,7 @@
         .result-actions { display: flex; align-items: center; gap: 16px; margin-top: 6px; }
         .listen-btn { background: #1db954; color: #fff; text-decoration: none; font-weight: 700; padding: 10px 16px; border-radius: 4px; }
         .listen-btn:hover { background: #1ed760; }
-        .another-btn { background: none; border: none; color: #b3b3b3; font-size: 14px; cursor: pointer; padding: 0; }
+        .another-btn { background: none; border: none; color: #b3b3b3; font-size: 14px; cursor: pointer; padding: 0; font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;}
         .another-btn:hover { color: #fff; }
 
         #log { margin-top: 20px; background: #181818; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; max-height: 150px; overflow-y: auto; }
@@ -65,7 +68,7 @@
     <!-- Auth / Landing Screen -->
     <div id="auth-section" style="text-align: center; margin-top: 100px;">
         <h1>Spotify Quick<br>Playlist Generator</h1>
-        <p style="color: #b3b3b3; margin-bottom: 30px;">Manage your private quick playlists effortlessly.</p>
+        <p style="color: #b3b3b3; margin-bottom: 30px;">Create simple mixes by selecting artists.</p>
         <button onclick="login()" style="background: #1db954; color: white; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 30px; cursor: pointer;">Log in with Spotify</button>
     </div>
 
@@ -135,6 +138,7 @@
     let selectedArtists = []; 
     let recentArtists = [];
     let computedDefaultName = '';
+    let artistList = '';
     let tracksPerArtist = 20;
 
     // Handle PKCE OAuth Redirect Response
@@ -247,16 +251,16 @@
     }
 
     async function loadRecentArtists() {
-        let data = await callSpotify('/me/top/artists?limit=10');
+        let data = await callSpotify('/me/top/artists?limit=5');
         if (!data || !data.items || data.items.length === 0) {
-            data = await callSpotify('/me/player/recently-played?limit=10');
+            data = await callSpotify('/me/player/recently-played?limit=5');
             if (data && data.items) {
                 const uniqueMap = new Map();
                 data.items.forEach(item => {
                     const artist = item.track.artists[0];
                     if (!uniqueMap.has(artist.id)) uniqueMap.set(artist.id, { id: artist.id, name: artist.name, images: [{url: ''}] });
                 });
-                recentArtists = Array.from(uniqueMap.values()).slice(0, 10);
+                recentArtists = Array.from(uniqueMap.values()).slice(0, 5);
             }
         } else {
             recentArtists = data.items.map(a => ({
@@ -399,6 +403,10 @@
             ? `${selectedArtists[0].name} Mix` 
             : `${selectedArtists.map(a => a.name).join(', ')} Mix`;
 
+        artistList = selectedArtists.length === 1 
+            ? `${selectedArtists[0].name}` 
+            : `${selectedArtists.map(a => a.name).join(', ')}`;
+
         const input = document.getElementById('customPlaylistName');
         input.placeholder = computedDefaultName;
         updatePlaylistNamePreview(input.value);
@@ -428,21 +436,24 @@
     // so pull tracks via track search and keep only ones credited to the artist.
     async function getArtistTracks(artist, perArtist) {
         const found = new Map(); // keyed by lowercase title to skip single/album duplicates
-        for (let offset = 0; offset < 100 && found.size < perArtist; offset += 10) {
+        const maxOffset = perArtist * 4; // only ~half of search hits are credited to the artist
+        let scanned = 0;
+        let stopReason = '';
+        for (let offset = 0; offset < maxOffset && found.size < perArtist; offset += 10) {
             const q = encodeURIComponent(`artist:"${artist.name}"`);
             const res = await callSpotify(`/search?q=${q}&type=track&limit=10&offset=${offset}`);
+            if (res && res.error) { stopReason = res.error.message || 'API error'; break; }
             const items = res && res.tracks && res.tracks.items;
             if (!Array.isArray(items) || items.length === 0) break;
-            const lastPage = items.length < 10;
+            scanned += items.length;
             items.forEach(t => {
                 if (t && t.uri && Array.isArray(t.artists) && t.artists.some(a => a.id === artist.id)) {
                     const key = t.name.toLowerCase();
                     if (!found.has(key)) found.set(key, { uri: t.uri, ms: t.duration_ms || 0 });
                 }
             });
-            if (lastPage) break;
         }
-        return Array.from(found.values()).slice(0, perArtist);
+        return { tracks: Array.from(found.values()).slice(0, perArtist), scanned, stopReason };
     }
 
     function formatDuration(ms) {
@@ -453,6 +464,8 @@
     }
 
     function showResultCard({ name, songCount, totalMs, url, coverUrl }) {
+
+
         const result = document.getElementById('result');
         result.innerHTML = '';
 
@@ -498,6 +511,11 @@
         another.textContent = 'Make another';
         another.onclick = () => location.reload();
 
+        const setup = document.getElementById('view-naming');
+        const logOutput = document.getElementById('log');
+        setup.remove();
+        logOutput.remove();
+
         actions.appendChild(listen);
         actions.appendChild(another);
         body.append(status, title, meta, actions);
@@ -523,12 +541,14 @@
 
         const customNameInput = document.getElementById('customPlaylistName').value.trim();
         const finalPlaylistName = customNameInput !== '' ? customNameInput : computedDefaultName;
+        const artistListOutput = artistList;
 
         // Gather tracks first so an empty playlist is never created
         const trackMap = new Map(); // uri -> duration (ms)
         for (const artist of selectedArtists) {
             log(`Finding up to ${tracksPerArtist} tracks for ${artist.name}...`);
-            const tracks = await getArtistTracks(artist, tracksPerArtist);
+            const { tracks, scanned, stopReason } = await getArtistTracks(artist, tracksPerArtist);
+            log(`  ${tracks.length} found (${scanned} search results checked)${stopReason ? ' - search stopped: ' + stopReason : ''}`);
             if (tracks.length === 0) log(`Warning: no tracks found for ${artist.name}.`);
             tracks.forEach(t => trackMap.set(t.uri, t.ms));
         }
@@ -544,7 +564,7 @@
         const createRes = await fetch('https://api.spotify.com/v1/me/playlists', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: finalPlaylistName, public: false, description: 'Generated via Quick Playlist Tool' })
+            body: JSON.stringify({ name: finalPlaylistName, public: false, description: `Top ${tracksPerArtist} songs from ${artistListOutput}. Generated via Quick Playlist Tool` })
         });
         if (!createRes.ok) {
             log(`Error creating playlist (HTTP ${createRes.status}).`);
