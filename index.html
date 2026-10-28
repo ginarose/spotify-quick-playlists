@@ -47,6 +47,18 @@
         .seg button.active { background: #1db954; font-weight: 700; }
         .helper-text { font-size: 13px; color: #888; font-style: italic; margin-top: 10px; }
 
+        /* Cover photo picker */
+        .cover-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 25px; }
+        .cover-preview { width: 160px; height: 160px; flex-shrink: 0; border-radius: 4px; overflow: hidden; background: #333; }
+        .cover-preview img { width: 100%; height: 100%; object-fit: cover; display: none; }
+        .cover-controls { flex: 1; min-width: 150px; }
+        .cover-search { margin-bottom: 10px; }
+        .reroll-btn { width: 100%; background: #1db954; border: none; color: #fff; padding: 12px; font-size: 16px; font-weight: 700; border-radius: 4px; cursor: pointer; }
+        .reroll-btn:hover { background: #1ed760; }
+        .cover-status { font-size: 13px; color: #b3b3b3; margin-top: 8px; min-height: 16px; }
+        .cover-credit, .result-credit { font-size: 12px; color: #888; margin-top: 8px; }
+        .cover-credit a, .result-credit a { color: #b3b3b3; }
+
         /* Result card */
         .result-card { display: flex; background: #282828; border-radius: 4px; overflow: hidden; margin-top: 20px; }
         .result-cover { width: 140px; min-height: 140px; flex-shrink: 0; background: #333 center / cover no-repeat; display: flex; align-items: center; justify-content: center; }
@@ -57,7 +69,7 @@
         .result-actions { display: flex; align-items: center; gap: 16px; margin-top: 6px; }
         .listen-btn { background: #1db954; color: #fff; text-decoration: none; font-weight: 700; padding: 10px 16px; border-radius: 4px; }
         .listen-btn:hover { background: #1ed760; }
-        .another-btn { background: none; border: none; color: #b3b3b3; font-size: 14px; cursor: pointer; padding: 0; font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;}
+        .another-btn { background: none; border: none; color: #b3b3b3; font-size: 14px; cursor: pointer; padding: 0; font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         .another-btn:hover { color: #fff; }
 
         #log { margin-top: 20px; background: #181818; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; max-height: 150px; overflow-y: auto; }
@@ -68,8 +80,8 @@
     <!-- Auth / Landing Screen -->
     <div id="auth-section" style="text-align: center; margin-top: 100px;">
         <h1>Spotify Quick<br>Playlist Generator</h1>
-        <p style="color: #b3b3b3; margin-bottom: 30px;">Create simple mixes by selecting artists.</p>
-        <button onclick="login()" style="background: #1db954; color: white; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 30px; cursor: pointer;">Log in with Spotify</button>
+        <p style="color: #b3b3b3; margin-bottom: 30px;">Manage your private quick playlists effortlessly.</p>
+        <button onclick="login()" style="background: #1db954; color: white; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 30px; cursor: pointer; font-family: 'Montserrat', sans-serif;">Log in with Spotify</button>
     </div>
 
     <!-- Main App Screen -->
@@ -117,6 +129,21 @@
                 <input type="text" id="customPlaylistName" placeholder="" oninput="updatePlaylistNamePreview(this.value)">
             </div>
 
+            <div id="cover-section" style="display:none;">
+                <h3>Cover photo:</h3>
+                <div class="cover-row">
+                    <div class="cover-preview" id="coverPreview"><img id="coverImg" alt="Cover photo preview"></div>
+                    <div class="cover-controls">
+                        <div class="search-container cover-search">
+                            <input type="text" id="coverQuery" placeholder="Search term (optional)" onkeydown="if (event.key === 'Enter') rerollCover()">
+                        </div>
+                        <button type="button" class="reroll-btn" onclick="rerollCover()">↻ Re-roll</button>
+                        <div class="cover-status" id="coverStatus"></div>
+                        <div class="cover-credit" id="coverCredit"></div>
+                    </div>
+                </div>
+            </div>
+
             <div class="action-bar" onclick="generatePlaylist()">
                 <div class="action-bar-text">Create Quick Playlist</div>
                 <div class="action-bar-btn">→</div>
@@ -133,13 +160,16 @@
 <script>
     const CLIENT_ID = 'adcf3fc6bef14e0eb4c5d6adecd29705'; 
     const REDIRECT_URI = window.location.origin + window.location.pathname;
-    const SCOPES = 'playlist-modify-private playlist-read-private user-top-read user-read-recently-played';
+    const SCOPES = 'playlist-modify-private playlist-read-private user-top-read user-read-recently-played ugc-image-upload';
+    const UNSPLASH_ACCESS_KEY = 'YOUR_UNSPLASH_ACCESS_KEY'; // paste your Unsplash Access Key here
+    const unsplashEnabled = UNSPLASH_ACCESS_KEY !== '' && !UNSPLASH_ACCESS_KEY.startsWith('YOUR_');
     
     let selectedArtists = []; 
     let recentArtists = [];
     let computedDefaultName = '';
-    let artistList = '';
     let tracksPerArtist = 20;
+    let currentPhoto = null;
+    let coverRequestId = 0;
 
     // Handle PKCE OAuth Redirect Response
     const urlParams = new URLSearchParams(window.location.search);
@@ -149,7 +179,13 @@
         window.history.pushState("", document.title, window.location.pathname);
         exchangeCodeForToken(code);
     } else if (localStorage.getItem('spotify_access_token')) {
-        showApp();
+        // Tokens issued before the image-upload scope was added need a fresh login
+        if ((localStorage.getItem('spotify_scope') || '').split(' ').includes('ugc-image-upload')) {
+            showApp();
+        } else {
+            localStorage.removeItem('spotify_access_token');
+            localStorage.removeItem('spotify_refresh_token');
+        }
     }
 
     // PKCE Helper Functions
@@ -214,6 +250,7 @@
             const data = await response.json();
             if (data.access_token) {
                 localStorage.setItem('spotify_access_token', data.access_token);
+                localStorage.setItem('spotify_scope', data.scope || '');
                 if (data.refresh_token) {
                     localStorage.setItem('spotify_refresh_token', data.refresh_token);
                 }
@@ -251,16 +288,16 @@
     }
 
     async function loadRecentArtists() {
-        let data = await callSpotify('/me/top/artists?limit=5');
+        let data = await callSpotify('/me/top/artists?limit=10');
         if (!data || !data.items || data.items.length === 0) {
-            data = await callSpotify('/me/player/recently-played?limit=5');
+            data = await callSpotify('/me/player/recently-played?limit=10');
             if (data && data.items) {
                 const uniqueMap = new Map();
                 data.items.forEach(item => {
                     const artist = item.track.artists[0];
                     if (!uniqueMap.has(artist.id)) uniqueMap.set(artist.id, { id: artist.id, name: artist.name, images: [{url: ''}] });
                 });
-                recentArtists = Array.from(uniqueMap.values()).slice(0, 5);
+                recentArtists = Array.from(uniqueMap.values()).slice(0, 10);
             }
         } else {
             recentArtists = data.items.map(a => ({
@@ -350,6 +387,11 @@
         document.getElementById('customPlaylistName').value = '';
         renderNamingChips();
         updateComputedName();
+
+        if (unsplashEnabled) {
+            document.getElementById('cover-section').style.display = 'block';
+            if (!currentPhoto) loadCover('');
+        }
     }
 
     function goBackToSelect() {
@@ -403,10 +445,6 @@
             ? `${selectedArtists[0].name} Mix` 
             : `${selectedArtists.map(a => a.name).join(', ')} Mix`;
 
-        artistList = selectedArtists.length === 1 
-            ? `${selectedArtists[0].name}` 
-            : `${selectedArtists.map(a => a.name).join(', ')}`;
-
         const input = document.getElementById('customPlaylistName');
         input.placeholder = computedDefaultName;
         updatePlaylistNamePreview(input.value);
@@ -456,6 +494,108 @@
         return { tracks: Array.from(found.values()).slice(0, perArtist), scanned, stopReason };
     }
 
+    // ---------- Cover photo (Unsplash) ----------
+    const UNSPLASH_THEMES = ['abstract', 'texture', 'gradient', 'neon lights', 'night sky', 'city lights', 'ocean', 'forest', 'clouds', 'flowers', 'desert', 'mountains', 'minimal', 'vintage', 'colorful', 'pattern', 'sunset', 'mist'];
+    const UTM = '?utm_source=spotify_quick_playlists&utm_medium=referral';
+
+    function fillCredit(el, photo) {
+        el.textContent = '';
+        const a1 = document.createElement('a');
+        a1.href = photo.photographerUrl + UTM;
+        a1.target = '_blank';
+        a1.rel = 'noopener';
+        a1.textContent = photo.photographer;
+        const a2 = document.createElement('a');
+        a2.href = 'https://unsplash.com/' + UTM;
+        a2.target = '_blank';
+        a2.rel = 'noopener';
+        a2.textContent = 'Unsplash';
+        el.append('Photo by ', a1, ' on ', a2);
+    }
+
+    function setCoverStatus(msg) {
+        document.getElementById('coverStatus').textContent = msg;
+    }
+
+    function renderCover() {
+        if (!currentPhoto) return;
+        const preview = document.getElementById('coverPreview');
+        const img = document.getElementById('coverImg');
+        preview.style.backgroundColor = currentPhoto.color || '#333';
+        img.alt = currentPhoto.alt;
+        img.src = currentPhoto.thumbUrl;
+        img.style.display = 'block';
+        fillCredit(document.getElementById('coverCredit'), currentPhoto);
+    }
+
+    async function loadCover(query) {
+        const reqId = ++coverRequestId; // ignore stale responses if the user re-rolls quickly
+        const term = query && query.trim() !== ''
+            ? query.trim()
+            : UNSPLASH_THEMES[Math.floor(Math.random() * UNSPLASH_THEMES.length)];
+        setCoverStatus('Loading…');
+        try {
+            const res = await fetch(
+                `https://api.unsplash.com/photos/random?orientation=squarish&content_filter=high&query=${encodeURIComponent(term)}`,
+                { headers: { 'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}` } }
+            );
+            if (reqId !== coverRequestId) return;
+            if (res.status === 404) { setCoverStatus('No photos found for that search.'); return; }
+            if (res.status === 403 || res.status === 429) { setCoverStatus('Unsplash rate limit reached. Try again later.'); return; }
+            if (!res.ok) { setCoverStatus(`Couldn't load a photo (HTTP ${res.status}).`); return; }
+            const p = await res.json();
+            if (reqId !== coverRequestId) return;
+            currentPhoto = {
+                id: p.id,
+                thumbUrl: p.urls.small,
+                rawUrl: p.urls.raw,
+                photographer: p.user.name,
+                photographerUrl: p.user.links.html,
+                downloadLocation: p.links.download_location,
+                color: p.color,
+                alt: p.alt_description || 'Cover photo preview'
+            };
+            setCoverStatus('');
+            renderCover();
+        } catch (err) {
+            if (reqId === coverRequestId) setCoverStatus("Couldn't reach Unsplash.");
+        }
+    }
+
+    function rerollCover() {
+        loadCover(document.getElementById('coverQuery').value);
+    }
+
+    // Crop to 640x640 and re-encode until the base64 payload fits Spotify's 256 KB limit
+    async function buildCoverBase64(photo) {
+        const sep = photo.rawUrl.includes('?') ? '&' : '?';
+        const res = await fetch(`${photo.rawUrl}${sep}w=640&h=640&fit=crop&crop=entropy&fm=jpg&q=85`);
+        if (!res.ok) throw new Error(`image download failed (HTTP ${res.status})`);
+        const bitmap = await createImageBitmap(await res.blob());
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 640;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, 640, 640);
+        for (let q = 0.9; q >= 0.4; q -= 0.1) {
+            const b64 = canvas.toDataURL('image/jpeg', q).split(',')[1];
+            if (b64.length <= 240 * 1024) return b64;
+        }
+        throw new Error('image too large after compression');
+    }
+
+    function joinNames(names) {
+        if (names.length <= 1) return names.join('');
+        return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+    }
+
+    // Spotify caps descriptions at 300 characters; trim the artist list, never the credit
+    function buildDescription(photo) {
+        const base = `Top ${tracksPerArtist} songs from: ${joinNames(selectedArtists.map(a => a.name))}.`;
+        const credit = photo ? ` Cover photo by ${photo.photographer} on Unsplash.` : '';
+        if (base.length + credit.length <= 300) return base + credit;
+        return base.slice(0, 300 - credit.length - 1).trimEnd() + '…' + credit;
+    }
+
     function formatDuration(ms) {
         const mins = Math.round(ms / 60000);
         const h = Math.floor(mins / 60);
@@ -463,9 +603,7 @@
         return h > 0 ? `${h}hr ${m}min` : `${m}min`;
     }
 
-    function showResultCard({ name, songCount, totalMs, url, coverUrl }) {
-
-
+    function showResultCard({ name, songCount, totalMs, url, coverUrl, photo }) {
         const result = document.getElementById('result');
         result.innerHTML = '';
 
@@ -511,14 +649,17 @@
         another.textContent = 'Make another';
         another.onclick = () => location.reload();
 
-        const setup = document.getElementById('view-naming');
-        const logOutput = document.getElementById('log');
-        setup.remove();
-        logOutput.remove();
-
         actions.appendChild(listen);
         actions.appendChild(another);
         body.append(status, title, meta, actions);
+
+        if (photo) {
+            const credit = document.createElement('div');
+            credit.className = 'result-credit';
+            fillCredit(credit, photo);
+            body.appendChild(credit);
+        }
+
         card.append(cover, body);
         result.appendChild(card);
         card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -539,9 +680,9 @@
         logDiv.innerHTML = '';
         document.getElementById('result').innerHTML = '';
 
+        const photo = currentPhoto; // lock in the photo shown at click time
         const customNameInput = document.getElementById('customPlaylistName').value.trim();
         const finalPlaylistName = customNameInput !== '' ? customNameInput : computedDefaultName;
-        const artistListOutput = artistList;
 
         // Gather tracks first so an empty playlist is never created
         const trackMap = new Map(); // uri -> duration (ms)
@@ -564,7 +705,7 @@
         const createRes = await fetch('https://api.spotify.com/v1/me/playlists', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: finalPlaylistName, public: false, description: `Top ${tracksPerArtist} songs from ${artistListOutput}. Generated via Quick Playlist Tool` })
+            body: JSON.stringify({ name: finalPlaylistName, public: false, description: buildDescription(null) })
         });
         if (!createRes.ok) {
             log(`Error creating playlist (HTTP ${createRes.status}).`);
@@ -585,6 +726,35 @@
             }
         }
 
+        // Cover photo: upload first, and only add the Unsplash credit to the description if it worked
+        let creditedPhoto = null;
+        if (photo) {
+            log('Uploading cover photo...');
+            try {
+                const b64 = await buildCoverBase64(photo);
+                const imgRes = await fetch(`https://api.spotify.com/v1/playlists/${newPlaylist.id}/images`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'image/jpeg' },
+                    body: b64
+                });
+                if (!imgRes.ok) {
+                    const hint = (imgRes.status === 401 || imgRes.status === 403) ? ' - try logging in again to grant image permission' : '';
+                    throw new Error(`Spotify rejected the image (HTTP ${imgRes.status})${hint}`);
+                }
+                creditedPhoto = photo;
+                // Unsplash requires reporting the use of a photo
+                fetch(photo.downloadLocation, { headers: { 'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}` } }).catch(() => {});
+                const descRes = await fetch(`https://api.spotify.com/v1/playlists/${newPlaylist.id}`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description: buildDescription(photo) })
+                });
+                if (!descRes.ok) log(`Note: couldn't add the photo credit to the description (HTTP ${descRes.status}).`);
+            } catch (err) {
+                log(`Cover upload skipped: ${err.message}`);
+            }
+        }
+
         log('Done!');
         const totalMs = Array.from(trackMap.values()).reduce((sum, ms) => sum + ms, 0);
         showResultCard({
@@ -592,10 +762,12 @@
             songCount: allTrackUris.length,
             totalMs,
             url: (newPlaylist.external_urls && newPlaylist.external_urls.spotify) || `https://open.spotify.com/playlist/${newPlaylist.id}`,
-            coverUrl: null
+            coverUrl: creditedPhoto ? creditedPhoto.thumbUrl : null,
+            photo: creditedPhoto
         });
         return true;
     }
 </script>
 </body>
 </html>
+
