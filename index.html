@@ -382,7 +382,10 @@
 
     function goToNamingScreen() {
         document.getElementById('view-select').style.display = 'none';
-        document.getElementById('view-naming').style.display = 'block';
+        const naming = document.getElementById('view-naming');
+        naming.style.display = 'block';
+        naming.style.opacity = '1';
+        naming.style.pointerEvents = '';
 
         document.getElementById('customPlaylistName').value = '';
         renderNamingChips();
@@ -665,6 +668,18 @@
         card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
+    function fadeOutNaming(ms = 400) {
+        const el = document.getElementById('view-naming');
+        if (el.style.display === 'none') return Promise.resolve();
+        el.style.transition = `opacity ${ms}ms ease`;
+        el.style.opacity = '0';
+        el.style.pointerEvents = 'none';
+        return new Promise(resolve => setTimeout(() => {
+            el.style.display = 'none';
+            resolve();
+        }, ms));
+    }
+
     let isGenerating = false;
 
     async function generatePlaylist() {
@@ -757,6 +772,7 @@
 
         log('Done!');
         const totalMs = Array.from(trackMap.values()).reduce((sum, ms) => sum + ms, 0);
+        await fadeOutNaming();
         showResultCard({
             name: finalPlaylistName,
             songCount: allTrackUris.length,
