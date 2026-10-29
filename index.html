@@ -35,6 +35,19 @@
         .action-bar:hover { background: #1ed760; }
         .action-bar-text { padding: 18px 20px; font-size: 18px; font-weight: 700; color: white; flex: 1; }
         .action-bar-btn { background: rgba(0,0,0,0.1); width: 70px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: white; }
+        /* Create Quick Playlist button: loading, success */
+        .create-btn { position: relative; transition: background 0.2s; }
+        .create-btn.loading, .create-btn.success { pointer-events: none; }
+        .create-btn.loading { background: #1db954; cursor: default; }
+        .create-btn .spinner { width: 22px; height: 22px; border: 3px solid rgba(255,255,255,0.35); border-top-color: #fff; border-radius: 50%; animation: btn-spin 0.8s linear infinite; }
+        @keyframes btn-spin { to { transform: rotate(360deg); } }
+        .create-btn.success { background: #1ed760; animation: btn-pulse 0.7s ease-out; }
+        .create-btn.success .action-bar-btn { animation: btn-pop 0.35s ease-out; }
+        @keyframes btn-pulse { 0% { box-shadow: 0 0 0 0 rgba(30,215,96,0.6); } 100% { box-shadow: 0 0 0 16px rgba(30,215,96,0); } }
+        @keyframes btn-pop { 0% { transform: scale(0.4); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
+        @media (prefers-reduced-motion: reduce) {
+            .create-btn.success, .create-btn.success .action-bar-btn { animation: none; }
+        }
         .including-box { background: #165b2d; padding: 12px 20px; font-size: 14px; color: #a7f3d0; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; margin-top: -4px; margin-bottom: 20px; }
 
         /* Naming Screen */
@@ -49,6 +62,16 @@
         .seg button { flex: 1; background: #535353; border: none; color: #fff; padding: 12px; font-size: 16px; border-radius: 4px; cursor: pointer; }
         .seg button:hover { background: #636363; }
         .seg button.active { background: #1db954; font-weight: 700; }
+        .options-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 25px; }
+        .options-row h3 { margin-top: 20px; }
+        .options-row { --btn-w: 52px; --btn-h: 44px; }
+        .options-row .seg { margin-bottom: 0; }
+        .options-row .seg button { flex: 0 0 var(--btn-w); width: var(--btn-w); height: var(--btn-h); padding: 0; }
+        .shuffle-col { display: flex; flex-direction: column; }
+        .shuffle-btn { width: calc(var(--btn-w) * 1.5); height: var(--btn-h); background: #535353; border: none; color: #fff; padding: 0; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .shuffle-btn:hover { background: #636363; }
+        .shuffle-btn.active { background: #1db954; }
+        .shuffle-btn svg { display: block; }
         .helper-text { font-size: 13px; color: #888; font-style: italic; margin-top: 10px; }
 
         /* Cover photo picker */
@@ -57,8 +80,8 @@
         .cover-preview img { width: 100%; height: 100%; object-fit: cover; display: none; }
         .cover-controls { flex: 1; min-width: 150px; }
         .cover-search { margin-bottom: 10px; }
-        .reroll-btn { width: 100%; background: #1db954; border: none; color: #fff; padding: 12px; font-size: 16px; font-weight: 700; border-radius: 4px; cursor: pointer; }
-        .reroll-btn:hover { background: #1ed760; }
+        .reroll-btn { width: 100%; background: #165b2d; border: none; color: #a7f3d0; padding: 12px; font-size: 16px; font-weight: 700; border-radius: 4px; cursor: pointer; }
+        .reroll-btn:hover { background: #1a6e36; }
         .cover-status { font-size: 13px; color: #b3b3b3; margin-top: 8px; min-height: 16px; }
         .cover-credit, .result-credit { font-size: 10px; color: #888; margin-top: 8px; }
         .cover-credit a, .result-credit a { color: #b3b3b3; }
@@ -85,7 +108,8 @@
         .another-btn { background: none; border: none; color: #b3b3b3; font-size: 14px; cursor: pointer; padding: 0; font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         .another-btn:hover { color: #fff; }
 
-        #log { margin-top: 20px; background: #181818; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; max-height: 150px; overflow-y: auto; }
+        #log { margin-top: 20px; background: #181818; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; line-height: 1.5; max-height: calc(4 * 1.5em); overflow-y: auto; transition: opacity 0.4s ease; }
+        #log.dimmed { opacity: 0.4; }
     </style>
 </head>
 <body>
@@ -130,11 +154,22 @@
                 <div class="chip-list" id="selectedChips"></div>
             </div>
 
-            <h3>Songs per artist:</h3>
-            <div class="seg" id="trackCountSeg">
-                <button type="button" onclick="setTracksPerArtist(10)">10</button>
-                <button type="button" class="active" onclick="setTracksPerArtist(20)">20</button>
-                <button type="button" onclick="setTracksPerArtist(50)">50</button>
+            <div class="options-row">
+                <div>
+                    <h3>Songs per artist:</h3>
+                    <div class="seg" id="trackCountSeg">
+                        <button type="button" onclick="setTracksPerArtist(10)">10</button>
+                        <button type="button" class="active" onclick="setTracksPerArtist(20)">20</button>
+                        <button type="button" onclick="setTracksPerArtist(30)">30</button>
+                        <button type="button" onclick="setTracksPerArtist(50)">50</button>
+                    </div>
+                </div>
+                <div class="shuffle-col">
+                    <h3>Shuffle</h3>
+                    <button type="button" class="shuffle-btn" id="shuffleBtn" aria-pressed="false" aria-label="Shuffle artists" title="Alternate between artists" onclick="toggleShuffle()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
+                    </button>
+                </div>
             </div>
 
             <h3>Change the name? (Optional)</h3>
@@ -163,7 +198,7 @@
                 </div>
             </div>
 
-            <div class="action-bar" onclick="generatePlaylist()">
+            <div class="action-bar create-btn" id="createBtn" onclick="generatePlaylist()">
                 <div class="action-bar-text">Create Quick Playlist</div>
                 <div class="action-bar-btn">→</div>
             </div>
@@ -187,6 +222,7 @@
     let recentArtists = [];
     let computedDefaultName = '';
     let tracksPerArtist = 20;
+    let shuffleArtists = false;
     let currentPhoto = null;
     let coverEnabled = true;
     let coverRequestId = 0;
@@ -406,6 +442,7 @@
         naming.style.display = 'block';
         naming.style.opacity = '1';
         naming.style.pointerEvents = '';
+        setCreateBtnState('idle');
 
         document.getElementById('customPlaylistName').value = '';
         renderNamingChips();
@@ -483,6 +520,26 @@
         document.querySelectorAll('#trackCountSeg button').forEach(b => {
             b.classList.toggle('active', parseInt(b.textContent) === n);
         });
+    }
+
+    function toggleShuffle() {
+        shuffleArtists = !shuffleArtists;
+        const btn = document.getElementById('shuffleBtn');
+        btn.classList.toggle('active', shuffleArtists);
+        btn.setAttribute('aria-pressed', shuffleArtists);
+    }
+
+    // Round-robin: one track from each artist in turn (A, B, C, A, B, C, ...).
+    // Artists that run out of tracks are skipped.
+    function interleave(lists) {
+        const out = [];
+        const longest = Math.max(0, ...lists.map(l => l.length));
+        for (let i = 0; i < longest; i++) {
+            for (const list of lists) {
+                if (i < list.length) out.push(list[i]);
+            }
+        }
+        return out;
     }
 
     function log(msg) {
@@ -654,6 +711,7 @@
     function showResultCard({ name, songCount, totalMs, url, coverUrl, photo }) {
         const result = document.getElementById('result');
         result.innerHTML = '';
+        document.getElementById('log').classList.add('dimmed');
 
         const card = document.createElement('div');
         card.className = 'result-card';
@@ -727,17 +785,46 @@
 
     let isGenerating = false;
 
+    function setCreateBtnState(state) {
+        const bar = document.getElementById('createBtn');
+        const text = bar.querySelector('.action-bar-text');
+        const icon = bar.querySelector('.action-bar-btn');
+        bar.classList.remove('loading', 'success');
+        if (state === 'loading') {
+            bar.classList.add('loading');
+            text.textContent = 'Creating…';
+            icon.innerHTML = '<span class="spinner"></span>';
+        } else if (state === 'success') {
+            bar.classList.add('success');
+            text.textContent = 'Playlist created!';
+            icon.textContent = '✓';
+        } else {
+            text.textContent = 'Create Quick Playlist';
+            icon.textContent = '→';
+        }
+    }
+
     async function generatePlaylist() {
         if (isGenerating) return;
         isGenerating = true;
-        const ok = await runGeneration();
-        if (!ok) isGenerating = false; // allow retry after a failure
+        setCreateBtnState('loading');
+        let ok = false;
+        try {
+            ok = await runGeneration();
+        } catch (err) {
+            log(`Error: ${err.message}`);
+        }
+        if (!ok) {
+            isGenerating = false; // allow retry after a failure
+            setCreateBtnState('idle');
+        }
     }
 
     async function runGeneration() {
         const logDiv = document.getElementById('log');
         logDiv.style.display = 'block';
         logDiv.innerHTML = '';
+        logDiv.classList.remove('dimmed');
         document.getElementById('result').innerHTML = '';
 
         const photo = coverEnabled ? currentPhoto : null; // lock in the photo shown at click time (null = keep Spotify's default cover)
@@ -746,14 +833,20 @@
 
         // Gather tracks first so an empty playlist is never created
         const trackMap = new Map(); // uri -> duration (ms)
+        const perArtistUris = []; // one list per artist, deduped across artists
         for (const artist of selectedArtists) {
             log(`Finding up to ${tracksPerArtist} tracks for ${artist.name}...`);
             const { tracks, scanned, stopReason } = await getArtistTracks(artist, tracksPerArtist);
             log(`  ${tracks.length} found (${scanned} search results checked)${stopReason ? ' - search stopped: ' + stopReason : ''}`);
             if (tracks.length === 0) log(`Warning: no tracks found for ${artist.name}.`);
-            tracks.forEach(t => trackMap.set(t.uri, t.ms));
+            const uris = [];
+            tracks.forEach(t => {
+                if (!trackMap.has(t.uri)) uris.push(t.uri);
+                trackMap.set(t.uri, t.ms);
+            });
+            perArtistUris.push(uris);
         }
-        const allTrackUris = Array.from(trackMap.keys());
+        const allTrackUris = shuffleArtists ? interleave(perArtistUris) : Array.from(trackMap.keys());
 
         if (allTrackUris.length === 0) {
             log('Error: no tracks found, playlist not created.');
@@ -823,6 +916,8 @@
 
         log('Done!');
         const totalMs = Array.from(trackMap.values()).reduce((sum, ms) => sum + ms, 0);
+        setCreateBtnState('success');
+        await new Promise(r => setTimeout(r, 800));
         await fadeOutNaming();
         showResultCard({
             name: finalPlaylistName,
