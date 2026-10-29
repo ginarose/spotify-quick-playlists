@@ -62,6 +62,15 @@
         .cover-status { font-size: 13px; color: #b3b3b3; margin-top: 8px; min-height: 16px; }
         .cover-credit, .result-credit { font-size: 10px; color: #888; margin-top: 8px; }
         .cover-credit a, .result-credit a { color: #b3b3b3; }
+        .cover-header { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 10px 0; }
+        .cover-header h3 { margin: 0; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .slider { position: absolute; inset: 0; background: #535353; border-radius: 24px; cursor: pointer; transition: background 0.2s; }
+        .switch .slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+        .switch input:checked + .slider { background: #1db954; }
+        .switch input:checked + .slider::before { transform: translateX(20px); }
+        .switch input:focus-visible + .slider { outline: 2px solid #fff; outline-offset: 2px; }
 
         /* Result card */
         .result-card { display: flex; background: #282828; border-radius: 4px; overflow: hidden; margin-top: 20px; }
@@ -84,7 +93,7 @@
     <!-- Auth / Landing Screen -->
     <div id="auth-section" style="text-align: center; margin-top: 100px;">
         <h1>Spotify Quick<br>Playlist Generator</h1>
-        <p style="color: #b3b3b3; margin-bottom: 30px;">Top songs by the artists you choose, all on one list. Easy, Fast, Simple.</p>
+        <p style="color: #b3b3b3; margin-bottom: 30px;">Top songs by the artists you choose, all on one list. <br>Easy, Fast, Simple.</p>
         <button onclick="login()" style="background: #1db954; color: white; border: none; padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 30px; cursor: pointer; font-family: 'Montserrat', sans-serif;">Log in with Spotify</button>
     </div>
 
@@ -134,8 +143,14 @@
             </div>
 
             <div id="cover-section" style="display:none;">
-                <h3>Cover photo:</h3>
-                <div class="cover-row">
+                <div class="cover-header">
+                    <h3>Cover photo:</h3>
+                    <label class="switch" title="Include a custom cover photo">
+                        <input type="checkbox" id="coverToggle" checked onchange="setCoverEnabled(this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="cover-row" id="coverRow">
                     <div class="cover-preview" id="coverPreview"><img id="coverImg" alt="Cover photo preview"></div>
                     <div class="cover-controls">
                         <div class="search-container cover-search">
@@ -173,6 +188,7 @@
     let computedDefaultName = '';
     let tracksPerArtist = 20;
     let currentPhoto = null;
+    let coverEnabled = true;
     let coverRequestId = 0;
 
     // Handle PKCE OAuth Redirect Response
@@ -397,7 +413,7 @@
 
         if (unsplashEnabled) {
             document.getElementById('cover-section').style.display = 'block';
-            if (!currentPhoto) loadCover('');
+            if (coverEnabled && !currentPhoto) loadCover('');
         }
     }
 
@@ -569,6 +585,12 @@
         }
     }
 
+    function setCoverEnabled(on) {
+        coverEnabled = on;
+        document.getElementById('coverRow').style.display = on ? 'flex' : 'none';
+        if (on && !currentPhoto) loadCover('');
+    }
+
     function rerollCover() {
         loadCover(document.getElementById('coverQuery').value);
     }
@@ -699,7 +721,7 @@
         logDiv.innerHTML = '';
         document.getElementById('result').innerHTML = '';
 
-        const photo = currentPhoto; // lock in the photo shown at click time
+        const photo = coverEnabled ? currentPhoto : null; // lock in the photo shown at click time (null = keep Spotify's default cover)
         const customNameInput = document.getElementById('customPlaylistName').value.trim();
         const finalPlaylistName = customNameInput !== '' ? customNameInput : computedDefaultName;
 
