@@ -585,6 +585,25 @@
         }
     }
 
+    // Spotify generates the default mosaic cover a moment after the tracks are added,
+    // so poll briefly until the playlist reports an image.
+    async function fetchSpotifyCover(playlistId, attempts = 5, delayMs = 1500) {
+        for (let i = 0; i < attempts; i++) {
+            try {
+                const token = localStorage.getItem('spotify_access_token');
+                const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/images`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const images = await res.json();
+                    if (Array.isArray(images) && images.length > 0 && images[0].url) return images[0].url;
+                }
+            } catch (e) { /* ignore and retry */ }
+            if (i < attempts - 1) await new Promise(r => setTimeout(r, delayMs));
+        }
+        return null;
+    }
+
     function setCoverEnabled(on) {
         coverEnabled = on;
         document.getElementById('coverRow').style.display = on ? 'flex' : 'none';
@@ -796,6 +815,12 @@
             }
         }
 
+        let spotifyCoverUrl = null;
+        if (!creditedPhoto) {
+            log('Fetching playlist cover...');
+            spotifyCoverUrl = await fetchSpotifyCover(newPlaylist.id);
+        }
+
         log('Done!');
         const totalMs = Array.from(trackMap.values()).reduce((sum, ms) => sum + ms, 0);
         await fadeOutNaming();
@@ -804,7 +829,7 @@
             songCount: allTrackUris.length,
             totalMs,
             url: (newPlaylist.external_urls && newPlaylist.external_urls.spotify) || `https://open.spotify.com/playlist/${newPlaylist.id}`,
-            coverUrl: creditedPhoto ? creditedPhoto.thumbUrl : null,
+            coverUrl: creditedPhoto ? creditedPhoto.thumbUrl : spotifyCoverUrl,
             photo: creditedPhoto
         });
         return true;
