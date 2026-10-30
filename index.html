@@ -5,6 +5,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Spotify Quick Playlist Generator</title>
     <style>
         body { font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #fff; max-width: 500px; margin: 40px auto; padding: 20px; box-sizing: border-box; }
@@ -110,6 +111,29 @@
 
         #log { margin-top: 20px; background: #181818; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; line-height: 1.5; max-height: calc(4 * 1.5em); overflow-y: auto; transition: opacity 0.4s ease; }
         #log.dimmed { opacity: 0.4; }
+
+        /* Touch / mobile */
+        html { -webkit-text-size-adjust: 100%; }
+        button, .action-bar, .switch { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        .result-actions { flex-wrap: wrap; }
+
+        @media (max-width: 520px) {
+            body { margin: 0 auto; padding: 16px; padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+            #auth-section { margin-top: 56px !important; }
+            h1 { font-size: 24px; margin: 12px 0 22px 0; }
+            h3 { margin-top: 16px; }
+            .summary-box { padding: 16px; }
+            .options-row { --btn-w: 46px; --btn-h: 44px; gap: 12px; }
+            .cover-row { flex-wrap: nowrap; gap: 12px; }
+            .cover-preview { width: 128px; height: 128px; }
+            .cover-controls { min-width: 0; }
+            .action-bar-text { padding: 16px; font-size: 17px; }
+            .action-bar-btn { width: 60px; }
+            .result-cover { width: 96px; min-height: 96px; }
+            .result-body { padding: 12px; }
+            .result-title { font-size: 18px; }
+            .result-actions { gap: 12px; }
+        }
     </style>
 </head>
 <body>
